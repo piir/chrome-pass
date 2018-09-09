@@ -24,6 +24,8 @@ if sys.platform == "win32":
 EXTENSION_NAME = "com.piaotech.chrome.extension.pass"
 EXTENSION_ID = "oblajhnjmknenodebpekmkliopipoolo"
 
+MULTILINE_ENTRY = ["pass", "user"]
+
 def get_gpg_bin():
   if 'PASS_GPG_BIN' in os.environ:
     return os.environ['PASS_GPG_BIN']
@@ -80,8 +82,7 @@ def get_pass(path):
   txt = open(get_store_path() + "/" + path + ".gpg", "rb")
   data = gpg.decrypt_file(txt)
   if data.ok:
-    password = data.data.decode('utf-8').split("\n")[0]
-    return password
+    return dict(zip(MULTILINE_ENTRY, data.data.decode('utf-8').strip().split("\n")))
   else:
     raise RuntimeError(data.stderr)
 
@@ -110,9 +111,10 @@ def process_native():
       pattern = urlparse(request["url"]).netloc
       send_message({ "action": "fill-creds", "credentials": get_list(pattern), "url": pattern })
     elif action == "get-pass":
-      user = request["user"]
       path = request["path"]
-      send_message({ "action": "fill-pass", "user": user, "pass": get_pass(path) })
+      param = {"user": request["user"]}
+      param.update(get_pass(path))
+      send_message({ "action": "fill-pass", "user": param["user"], "pass": param["pass"] })
   except RuntimeError as e:
     send_message({ "action": "error", "msg": str(e) })
   except Exception:
@@ -121,10 +123,14 @@ def process_native():
 # Method prints to stdout the list of passwords ordered by a similarty pattern
 def print_pass(pattern):
   for credential in get_list(pattern)[:10]:
-    account = credential[0] + "/" + credential[2]
+    account = credential[0] + "/"
+    param = { "user": credential[2] }
     try:
-      password = get_pass(account)
-      print("pass %s  %s" % (account, password))
+      param.update(get_pass(account + credential[2]))
+      if param["user"] is credential[2]:
+        print("pass %s  %s" % (account + param["user"], param["pass"]))
+      else:
+        print("pass %s/%s %s" % (account + credential[2], param["user"], param["pass"]))
     except RuntimeError as e:
       print("pass %s  %s" % (account, str(e)))
 
